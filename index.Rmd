@@ -1,0 +1,99 @@
+---
+output:
+  html_document:
+    keep_md: true
+---
+<style type="text/css">
+body, td { font-size: 12px; }
+code.r{  font-size: 11px; }
+pre {   font-size: 11px }
+</style>
+
+```{r setup, include=TRUE, echo=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+## Prediction of Quality of Weight Lifting Exercises with Machine Learning
+
+<p>&nbsp;</p>
+#### Executive Summary
+The aim of this analysis is to build a model to predict how well people perform weight lifting exercises (WLE) using data from aceloremeters on the belt, forearm, arm, and dumbell from 6 participants and machine learning tools in 'r', mainly the 'caret' package.
+
+[Training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) data were provided. Training data was split in training and testing datasets. Feature selection was made through exploratory analysis and testing, removing near zero covariates, variables with high proportion of missing values, variables considered irrelevant and high correlation variables. Original 160 variables were reduced to 31 predictor and the outcome "Classe". 
+
+Cross validation with 10K fold was used for model selection and optimization, several methods like rf and rpart were tested but gbm (boosting with trees) reported better model accuracy and had a good prediction result against the testing datasets (the result of the split and the 20 test cases in [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv))
+
+The data for this project was provided by
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201)
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE, cache=FALSE}
+#install.packages("caret"), install.packages("gbm")
+library(caret);library("gbm");
+```
+<p>&nbsp;</p>
+####Data Split
+Original training data was split in training and testing datasets since the original testing data doesn't have the output column "Classe" because it's used for final evaluation of the model.
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+trainingdata = read.csv("~/r/pml-training.csv"); endtestingdata = read.csv("~/r/pml-testing.csv")
+set.seed(1)
+intraining<-createDataPartition(trainingdata$classe, p = .75, list = FALSE)
+training <- trainingdata[intraining, ]; testing <- trainingdata[-intraining, ]
+dim(training); dim(testing)
+```
+<p>&nbsp;</p>
+####Feature Selection
+#####Near Zero Variates
+Near zero variables were removed reducing columns from 160 to 108
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+nzv <- nearZeroVar(training); training <- training[, -nzv]; dim(training)
+```
+#####Irrelevant Variables
+The first 6 columns from dataset were removed to be considered irrelevant to explain in general how well an exercise is performed, e.g. user_name who performed the exercise, date/time when the exercise was performed, etc. Columns were reduced from 108 to 102.
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+summary(trainingdata[1:6])
+training<-subset(training, select = -c(1,2,3,4,5,6)); dim(training)
+```
+#####Missing Values
+Columns with high proportion of missing values were removed, it was considered a better strategy to discard this variables instead of reducing the size of the sample. This was found with the summary function, some examples are shown. Columns were reduced from 102 to 53.
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+summary(subset(trainingdata,select=c(max_roll_belt,max_picth_belt,min_roll_belt,min_pitch_belt)))
+training<-subset(training,select = -c(max_roll_belt,max_picth_belt,min_roll_belt,min_pitch_belt,amplitude_roll_belt,amplitude_pitch_belt,var_total_accel_belt,avg_roll_belt,stddev_roll_belt,var_roll_belt,avg_pitch_belt,stddev_pitch_belt,var_pitch_belt,avg_yaw_belt,stddev_yaw_belt,var_yaw_belt,var_accel_arm,max_roll_arm,max_picth_arm,max_yaw_arm,min_roll_arm,min_pitch_arm,min_yaw_arm,amplitude_roll_arm,amplitude_pitch_arm,amplitude_yaw_arm,max_roll_dumbbell,max_picth_dumbbell,min_roll_dumbbell,min_pitch_dumbbell,amplitude_roll_dumbbell,amplitude_pitch_dumbbell,var_accel_dumbbell,avg_roll_dumbbell,stddev_roll_dumbbell,var_roll_dumbbell,avg_pitch_dumbbell,stddev_pitch_dumbbell,var_pitch_dumbbell,avg_yaw_dumbbell,stddev_yaw_dumbbell,var_yaw_dumbbell,max_roll_forearm,max_picth_forearm,min_roll_forearm,min_pitch_forearm,amplitude_roll_forearm,amplitude_pitch_forearm,var_accel_forearm))
+dim(training)
+```
+#####Correlated Predictors
+Columns were reduced from 53 to 32 (31 predictor and the outcome "Classe") when removing high correlation variables 
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+set.seed(7); correlationMatrix<-cor(training[,-c(53)]); highlyCorrelated<-findCorrelation(correlationMatrix, cutoff=0.75)
+training<-subset(training, select = -c(highlyCorrelated)); dim(training)
+```
+<p>&nbsp;</p>
+####Cross Validation
+Cross validation with 10K fold was used for model selection and optimization, CV was applied in trControl function in caret.
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+ctrl <- trainControl(method = "cv", number = 10,allowParallel = TRUE)
+```
+<p>&nbsp;</p>
+####Model Selection
+Several methods like rf and rpart were tested but gbm (boosting with trees) reported a better accuracy (0.94578) when fitting the model (in sample accuracy).
+```{r, echo=TRUE, cache=TRUE, fig.width=4, fig.height=4, fig.align='center', ps=9}
+modFit1<-train(classe~ .,data=training,method="gbm",verbose=FALSE,trControl= ctrl)
+print(modFit1)
+```
+<p>&nbsp;</p>
+####Prediction Accuracy / Out Of Sample Error
+Predictions of the model against the testing datasets were 95% accurate. This is shown in the confusion matrix against the split test dataset. The out of sample error not explained by the model is 5%. The model was also evaluated
+against the 20 test cases in [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)) with a similar prediction accuracy.
+```{r, echo = TRUE, warning=FALSE, message=FALSE}
+pred<-predict(modFit1,newdata=testing)
+confusionMatrix(pred,testing$classe)$table; confusionMatrix(pred,testing$classe)$overall['Accuracy']
+```
+<p>&nbsp;</p>
+####Conclusions
+<span style="color:blue">The proposed model predicts with 95% accuracy how well people perform weight lifting exercises (WLE)
+</span>. Key steps for the exercise were feature selection which reduced the amount of variables which is very relevant for computer processing when fitting the model and cross validation which is very important to optimize accuracy.
+</span>
+
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
